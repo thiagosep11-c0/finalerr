@@ -417,34 +417,10 @@ window.lerArquivo = async function(input) {
         const isPdf = file.type === "application/pdf";
         const mediaType = isPdf ? "application/pdf" : file.type;
 
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
+        const response = await fetch("https://finalerr-proxy.thiagosep11.workers.dev", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                model: "claude-sonnet-4-20250514",
-                max_tokens: 1000,
-                messages: [{
-                    role: "user",
-                    content: [
-                        {
-                            type: isPdf ? "document" : "image",
-                            source: { type: "base64", media_type: mediaType, data: base64 }
-                        },
-                        {
-                            type: "text",
-                            text: `Analise este comprovante/recibo e extraia os dados em JSON puro (sem markdown, sem explicações):
-{
-  "cliente": "nome do pagador ou remetente",
-  "valor": "valor numérico sem R$ (ex: 225.00)",
-  "metodo": "PIX ou TED ou DOC ou BOLETO",
-  "pix": "nome do destinatário ou chave pix",
-  "banco": "nubank ou bradesco ou mercadopago ou caixa ou outro"
-}
-Retorne APENAS o JSON, nada mais.`
-                        }
-                    ]
-                }]
-            })
+            body: JSON.stringify({ base64, mediaType, isPdf })
         });
 
         const data = await response.json();

@@ -368,9 +368,12 @@
         <div class="form-card" style="border-color:#1a3a2a;">
             <div class="form-card-title" style="color:var(--green);">🎫 Saldo de Créditos</div>
             <div style="display:flex; gap:20px; align-items:flex-end; flex-wrap:wrap;">
-                <div class="form-group" style="max-width:160px;">
+                <div class="form-group" style="max-width:220px;">
                     <label>Saldo Atual</label>
-                    <input type="number" id="creditoSaldo" step="1" onchange="window.editarSaldo(this.value)">
+                    <div style="display:flex; gap:8px;">
+                        <input type="number" id="creditoSaldo" step="1" onfocus="window.editandoSaldo=true" onblur="window.editandoSaldo=false" onkeydown="if(event.key==='Enter') window.salvarSaldoManual()">
+                        <button class="btn-green" style="width:auto; padding:11px 16px;" onclick="window.salvarSaldoManual()">💾</button>
+                    </div>
                 </div>
                 <button class="btn-green" style="width:auto;" onclick="window.resetarCreditos()">🔄 Resetar p/ 200</button>
                 <div style="flex:1; text-align:right; font-size:11px; color:#444;">Você compra de 200 em 200 créditos</div>
@@ -762,7 +765,7 @@ function renderCreditos() {
     if (sideEl) sideEl.textContent = creditosConfig.saldoAtual;
     const saldoEl = document.getElementById("creditoSaldo");
     if (!saldoEl) return;
-    if (document.activeElement !== saldoEl) saldoEl.value = creditosConfig.saldoAtual;
+    if (!window.editandoSaldo) saldoEl.value = creditosConfig.saldoAtual;
     renderFaixas();
     const body = document.getElementById("consumoBody");
     if (!body) return;
@@ -802,8 +805,12 @@ function renderFaixas() {
     `).join('');
 }
 
-window.editarSaldo = async function(v) {
+window.editandoSaldo = false;
+
+window.salvarSaldoManual = async function() {
+    const v = document.getElementById("creditoSaldo").value;
     creditosConfig.saldoAtual = parseFloat(v) || 0;
+    window.editandoSaldo = false;
     await salvarCreditosConfig();
     mostrarStatus("✓ Saldo atualizado!", "ok");
 }

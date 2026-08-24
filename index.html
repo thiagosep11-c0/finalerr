@@ -623,6 +623,7 @@ function atualizarTabela() {
     datasOrdenadas.forEach(dia => {
         const lista = grupos[dia];
         let totalDia = lista.reduce((sum, i) => sum + parseFloat(i.valor || 0), 0);
+        let creditosDia = lista.reduce((sum, i) => sum + (i.creditos != null ? i.creditos : 0), 0);
         if (sidebar) {
             const sideCard = document.createElement("div");
             sideCard.className = "dia-card";
@@ -652,7 +653,10 @@ function atualizarTabela() {
         bloco.innerHTML = `
             <div class="dia-header">
                 <div class="dia-titulo">📅 ${dia}</div>
-                <div class="dia-total-badge">R$ ${totalDia.toFixed(2)}</div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span class="credito-tag">🎫 −${creditosDia}</span>
+                    <div class="dia-total-badge">R$ ${totalDia.toFixed(2)}</div>
+                </div>
             </div>
             <div class="tabela-bloco">
                 <table>

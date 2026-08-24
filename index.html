@@ -141,6 +141,15 @@
         transition: all 0.2s;
     }
     .btn-logout:hover { border-color: #ff4444; color: #ff4444; }
+    .tab-switch { display: flex; gap: 6px; background: #0d0d0d; border: 1px solid #1a1a1a; border-radius: 8px; padding: 4px; }
+    .tab-btn { padding: 7px 16px; background: transparent; border: none; color: #555; border-radius: 6px; font-family: 'Montserrat'; font-size: 11px; font-weight: 700; letter-spacing: 1px; cursor: pointer; transition: all 0.2s; }
+    .tab-btn.active { background: var(--green); color: #000; }
+    .tab-btn:not(.active):hover { color: #fff; }
+    .credito-tag { display: inline-block; background: #0a2a15; color: var(--green); border: 1px solid #1a5a2a; border-radius: 5px; padding: 3px 10px; font-size: 11px; font-weight: 700; }
+    .credito-tag.sem-faixa { background: #2a1a00; color: #ffaa00; border-color: #5a3a00; }
+    .faixa-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .faixa-row input { width: 90px; }
+    .faixa-row span { font-size: 12px; color: #666; }
 
     .main-layout { display: flex; flex: 1; }
 
@@ -239,6 +248,10 @@
     <header>
         <h1>⚡ FINALERR</h1>
         <div class="header-right">
+            <div class="tab-switch">
+                <button class="tab-btn active" id="tabFinanceiro" onclick="window.mudarAba('financeiro')">💰 FINANCEIRO</button>
+                <button class="tab-btn" id="tabCreditos" onclick="window.mudarAba('creditos')">🎫 CRÉDITOS</button>
+            </div>
             <div id="relogioHeader">--/--/---- --:--:--</div>
             <button class="btn-logout" onclick="window.fazerLogout()">SAIR</button>
         </div>
@@ -302,7 +315,11 @@
                     </div>
                     <div class="form-group">
                         <label>Método</label>
-                        <input type="text" id="metodo" placeholder="PIX / TED..." oninput="this.value=this.value.toUpperCase()">
+                        <select id="metodo">
+                            <option value="PIX">PIX</option>
+                            <option value="CARTÃO">CARTÃO</option>
+                            <option value="DEPÓSITO">DEPÓSITO</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>Nome do PIX</label>
@@ -334,11 +351,41 @@
             </div>
         </main>
     </div>
+
+    <div id="abaCreditos" style="display:none; padding: 24px 30px; max-width: 1000px; margin: 0 auto; width: 100%;">
+        <div class="form-card" style="border-color:#1a3a2a;">
+            <div class="form-card-title" style="color:var(--green);">🎫 Saldo de Créditos</div>
+            <div style="display:flex; gap:20px; align-items:flex-end; flex-wrap:wrap;">
+                <div class="form-group" style="max-width:160px;">
+                    <label>Saldo Atual</label>
+                    <input type="number" id="creditoSaldo" step="1" onchange="window.editarSaldo(this.value)">
+                </div>
+                <button class="btn-green" style="width:auto;" onclick="window.resetarCreditos()">🔄 Resetar p/ 200</button>
+                <div style="flex:1; text-align:right; font-size:11px; color:#444;">Você compra de 200 em 200 créditos</div>
+            </div>
+        </div>
+
+        <div class="form-card">
+            <div class="form-card-title">📊 Tabela de Faixas — Valor → Créditos</div>
+            <div id="faixasContainer"></div>
+            <button class="btn-green btn-export" style="width:auto; margin-top:6px;" onclick="window.adicionarFaixa()">+ Nova Faixa</button>
+        </div>
+
+        <div class="form-card">
+            <div class="form-card-title">📋 Consumo por Lançamento</div>
+            <div class="tabela-bloco">
+                <table>
+                    <thead><tr><th>Data</th><th>Cliente</th><th>Valor</th><th>Créditos</th><th>Ajustar</th></tr></thead>
+                    <tbody id="consumoBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -354,8 +401,30 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 const colecao = collection(db, "lancamentos");
+const creditosDocRef = doc(db, "config", "creditos");
 let dados = [];
 let unsubscribe = null;
+let unsubscribeCreditos = null;
+let creditosConfig = {
+    saldoAtual: 60,
+    faixas: [
+        { min: 25, max: 35, creditos: 1 },
+        { min: 50, max: 70, creditos: 2 },
+        { min: 80, max: 99, creditos: 3 },
+        { min: 100, max: 120, creditos: 4 },
+        { min: 140, max: 160, creditos: 6 },
+        { min: 265, max: 265, creditos: 12 }
+    ]
+};
+
+function calcularCreditos(valor) {
+    const faixa = creditosConfig.faixas.find(f => valor >= f.min && valor <= f.max);
+    return faixa ? faixa.creditos : null;
+}
+
+async function salvarCreditosConfig() {
+    await setDoc(creditosDocRef, creditosConfig);
+}
 
 onAuthStateChanged(auth, (user) => {
     if (user) {
@@ -367,12 +436,24 @@ onAuthStateChanged(auth, (user) => {
                 dados = [];
                 snapshot.forEach(d => dados.push({ id: d.id, ...d.data() }));
                 atualizarTabela();
+                renderCreditos();
+            });
+        }
+        if (!unsubscribeCreditos) {
+            unsubscribeCreditos = onSnapshot(creditosDocRef, (snap) => {
+                if (snap.exists()) {
+                    creditosConfig = snap.data();
+                } else {
+                    setDoc(creditosDocRef, creditosConfig);
+                }
+                renderCreditos();
             });
         }
     } else {
         document.getElementById("loginScreen").style.display = "flex";
         document.getElementById("appScreen").style.display = "none";
         if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+        if (unsubscribeCreditos) { unsubscribeCreditos(); unsubscribeCreditos = null; }
     }
 });
 
@@ -438,7 +519,11 @@ window.lerArquivo = async function(input) {
 
         if (parsed.cliente) document.getElementById("cliente").value = parsed.cliente.toUpperCase();
         if (parsed.valor) document.getElementById("valor").value = parsed.valor;
-        if (parsed.metodo) document.getElementById("metodo").value = parsed.metodo.toUpperCase();
+        if (parsed.metodo) {
+            const metodoSel = document.getElementById("metodo");
+            const metodoUp = parsed.metodo.toUpperCase();
+            if ([...metodoSel.options].some(o => o.value === metodoUp)) metodoSel.value = metodoUp;
+        }
         if (parsed.pix) document.getElementById("pix").value = parsed.pix.toUpperCase();
         if (parsed.banco) {
             const bancoMap = { "nubank": "nubank", "bradesco": "bradesco", "mercado pago": "mercadopago", "mercadopago": "mercadopago", "caixa": "caixa", "caixa econômica": "caixa" };
@@ -571,7 +656,12 @@ function atualizarTabela() {
 window.removerLinha = async function(id) {
     if (confirm("Remover este lançamento?")) {
         try {
+            const item = dados.find(d => d.id === id);
             await deleteDoc(doc(db, "lancamentos", id));
+            if (item && item.creditos != null) {
+                creditosConfig.saldoAtual += item.creditos;
+                await salvarCreditosConfig();
+            }
             mostrarStatus("Removido!", "ok");
         } catch(e) { mostrarStatus("Erro ao remover!", "erro"); }
     }
@@ -587,16 +677,22 @@ window.adicionar = async function() {
     const agora = new Date();
     const pad = n => String(n).padStart(2, '0');
     const dataCompleta = `${pad(agora.getDate())}/${pad(agora.getMonth()+1)}/${agora.getFullYear()} ${pad(agora.getHours())}:${pad(agora.getMinutes())}:${pad(agora.getSeconds())}`;
+    const valorNum = parseFloat(valor);
+    const creditosGastos = calcularCreditos(valorNum);
     const btn = document.querySelector(".btn-green");
     btn.textContent = "SALVANDO..."; btn.disabled = true;
     try {
-        await addDoc(colecao, { dataCompleta, data: `${pad(agora.getDate())}/${pad(agora.getMonth()+1)}/${agora.getFullYear()}`, cliente, valor: parseFloat(valor), metodo, pix, banco, status: "PAGO", timestamp: serverTimestamp() });
+        await addDoc(colecao, { dataCompleta, data: `${pad(agora.getDate())}/${pad(agora.getMonth()+1)}/${agora.getFullYear()}`, cliente, valor: valorNum, metodo, pix, banco, status: "PAGO", creditos: creditosGastos, timestamp: serverTimestamp() });
+        if (creditosGastos != null) {
+            creditosConfig.saldoAtual -= creditosGastos;
+            await salvarCreditosConfig();
+        }
         document.getElementById("cliente").value = '';
         document.getElementById("valor").value = '';
-        document.getElementById("metodo").value = '';
+        document.getElementById("metodo").value = 'PIX';
         document.getElementById("pix").value = '';
         document.getElementById("banco").value = '';
-        mostrarStatus("✓ Salvo na nuvem!", "ok");
+        mostrarStatus(creditosGastos != null ? `✓ Salvo! −${creditosGastos} créditos` : "✓ Salvo! (fora das faixas — ajuste na aba Créditos)", "ok");
     } catch(e) { mostrarStatus("Erro ao salvar!", "erro"); }
     btn.textContent = "+ ADICIONAR"; btn.disabled = false;
 }
@@ -622,6 +718,99 @@ function calcularTotalHoje() {
     document.getElementById("totalNubank").textContent = "R$ " + nu.toFixed(2);
     document.getElementById("totalMP").textContent = "R$ " + mp.toFixed(2);
     document.getElementById("totalCaixa").textContent = "R$ " + cx.toFixed(2);
+}
+
+window.mudarAba = function(aba) {
+    document.querySelector('.main-layout').style.display = aba === 'financeiro' ? 'flex' : 'none';
+    document.getElementById('abaCreditos').style.display = aba === 'creditos' ? 'block' : 'none';
+    document.getElementById('tabFinanceiro').classList.toggle('active', aba === 'financeiro');
+    document.getElementById('tabCreditos').classList.toggle('active', aba === 'creditos');
+    if (aba === 'creditos') renderCreditos();
+}
+
+function renderCreditos() {
+    const saldoEl = document.getElementById("creditoSaldo");
+    if (!saldoEl) return;
+    if (document.activeElement !== saldoEl) saldoEl.value = creditosConfig.saldoAtual;
+    renderFaixas();
+    const body = document.getElementById("consumoBody");
+    if (!body) return;
+    if (dados.length === 0) {
+        body.innerHTML = `<tr><td colspan="5" style="color:#333;">Nenhum lançamento ainda</td></tr>`;
+        return;
+    }
+    body.innerHTML = dados.map(item => {
+        const tem = item.creditos !== null && item.creditos !== undefined;
+        const tag = tem
+            ? `<span class="credito-tag">−${item.creditos}</span>`
+            : `<span class="credito-tag sem-faixa">sem faixa</span>`;
+        return `<tr>
+            <td>${item.data || ''}</td>
+            <td style="font-weight:600;">${item.cliente}</td>
+            <td style="color:var(--green);font-weight:700;">R$ ${parseFloat(item.valor).toFixed(2)}</td>
+            <td>${tag}</td>
+            <td><input type="number" placeholder="manual" style="width:70px;text-align:center;" value="${tem ? item.creditos : ''}" onchange="window.definirCreditoManual('${item.id}', this.value)"></td>
+        </tr>`;
+    }).join('');
+}
+
+function renderFaixas() {
+    const cont = document.getElementById("faixasContainer");
+    if (!cont) return;
+    cont.innerHTML = creditosConfig.faixas.map((f, i) => `
+        <div class="faixa-row">
+            <span>R$</span>
+            <input type="number" value="${f.min}" onchange="window.editarFaixa(${i},'min',this.value)">
+            <span>até</span>
+            <input type="number" value="${f.max}" onchange="window.editarFaixa(${i},'max',this.value)">
+            <span>=</span>
+            <input type="number" value="${f.creditos}" onchange="window.editarFaixa(${i},'creditos',this.value)">
+            <span>créditos</span>
+            <span class="btn-del" onclick="window.removerFaixa(${i})">✕</span>
+        </div>
+    `).join('');
+}
+
+window.editarSaldo = async function(v) {
+    creditosConfig.saldoAtual = parseFloat(v) || 0;
+    await salvarCreditosConfig();
+    mostrarStatus("✓ Saldo atualizado!", "ok");
+}
+
+window.resetarCreditos = async function() {
+    if (!confirm("Resetar saldo para 200 créditos?")) return;
+    creditosConfig.saldoAtual = 200;
+    await salvarCreditosConfig();
+    mostrarStatus("✓ Saldo resetado para 200!", "ok");
+}
+
+window.adicionarFaixa = async function() {
+    creditosConfig.faixas.push({ min: 0, max: 0, creditos: 0 });
+    await salvarCreditosConfig();
+    renderFaixas();
+}
+
+window.editarFaixa = async function(i, campo, v) {
+    creditosConfig.faixas[i][campo] = parseFloat(v) || 0;
+    await salvarCreditosConfig();
+}
+
+window.removerFaixa = async function(i) {
+    creditosConfig.faixas.splice(i, 1);
+    await salvarCreditosConfig();
+    renderFaixas();
+}
+
+window.definirCreditoManual = async function(id, v) {
+    const novo = v === '' ? null : (parseFloat(v) || 0);
+    const item = dados.find(d => d.id === id);
+    if (!item) return;
+    const antigo = item.creditos != null ? item.creditos : 0;
+    const novoNum = novo != null ? novo : 0;
+    creditosConfig.saldoAtual -= (novoNum - antigo);
+    await salvarCreditosConfig();
+    await updateDoc(doc(db, "lancamentos", id), { creditos: novo });
+    mostrarStatus("✓ Créditos ajustados!", "ok");
 }
 
 window.baixarCSV = function() {

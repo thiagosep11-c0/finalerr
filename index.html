@@ -283,6 +283,10 @@
                     <span id="totalCaixa" style="color:#ffdd00; font-weight:700;">R$ 0,00</span>
                 </div>
             </div>
+            <div style="background:#111; border:1px solid #1a1a1a; border-radius:10px; padding:12px; margin-top:12px; display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-size:11px; color:#666; font-weight:700; letter-spacing:1px;">🎫 CRÉDITOS</span>
+                <span id="saldoSidebar" style="color:var(--green); font-weight:800; font-size:16px;">0</span>
+            </div>
             <div class="sidebar-dias-titulo">Total por Dia</div>
             <div id="diasSidebar"></div>
         </aside>
@@ -311,7 +315,11 @@
                     </div>
                     <div class="form-group">
                         <label>Valor</label>
-                        <input type="number" step="0.01" id="valor" placeholder="0,00">
+                        <input type="number" step="0.01" id="valor" placeholder="0,00" oninput="window.atualizarPreviewCredito()">
+                    </div>
+                    <div class="form-group">
+                        <label>Créditos</label>
+                        <input type="number" step="1" id="creditoPreview" placeholder="0">
                     </div>
                     <div class="form-group">
                         <label>Método</label>
@@ -623,14 +631,17 @@ function atualizarTabela() {
         bloco.id = 'bloco-' + dia.replace(/\//g, '-');
         let rows = '';
         lista.forEach(item => {
+            const temCred = item.creditos !== null && item.creditos !== undefined;
+            const credTag = temCred ? `<span class="credito-tag">−${item.creditos}</span>` : `<span class="credito-tag sem-faixa">—</span>`;
             rows += `<tr>
                 <td>${item.dataCompleta || item.data}</td>
                 <td style="font-weight:600;">${item.cliente}</td>
                 <td style="color:var(--green);font-weight:700;">R$ ${parseFloat(item.valor).toFixed(2)}</td>
+                <td>${credTag}</td>
                 <td>${item.metodo}</td>
                 <td>${item.pix}</td>
                 <td>${bancoTag(item.banco)}</td>
-                <td><span class="status-pago">PAGO</span></td>
+                <td><span class="status-pago">PAGO</span>${temCred ? `<div style="font-size:9px;color:#888;margin-top:3px;">−${item.creditos} créd.</div>` : ''}</td>
                 <td><span class="btn-del" onclick="window.removerLinha('${item.id}')">✕</span></td>
             </tr>`;
         });
@@ -642,7 +653,7 @@ function atualizarTabela() {
             <div class="tabela-bloco">
                 <table>
                     <thead><tr>
-                        <th>Data/Hora</th><th>Cliente</th><th>Valor</th>
+                        <th>Data/Hora</th><th>Cliente</th><th>Valor</th><th>Créditos</th>
                         <th>Método</th><th>PIX</th><th>Banco</th><th>Status</th><th>Del</th>
                     </tr></thead>
                     <tbody>${rows}</tbody>
@@ -678,7 +689,8 @@ window.adicionar = async function() {
     const pad = n => String(n).padStart(2, '0');
     const dataCompleta = `${pad(agora.getDate())}/${pad(agora.getMonth()+1)}/${agora.getFullYear()} ${pad(agora.getHours())}:${pad(agora.getMinutes())}:${pad(agora.getSeconds())}`;
     const valorNum = parseFloat(valor);
-    const creditosGastos = calcularCreditos(valorNum);
+    const creditoPreviewEl = document.getElementById("creditoPreview");
+    const creditosGastos = creditoPreviewEl.value === '' ? null : (parseFloat(creditoPreviewEl.value) || 0);
     const btn = document.querySelector(".btn-green");
     btn.textContent = "SALVANDO..."; btn.disabled = true;
     try {
@@ -689,6 +701,7 @@ window.adicionar = async function() {
         }
         document.getElementById("cliente").value = '';
         document.getElementById("valor").value = '';
+        document.getElementById("creditoPreview").value = '';
         document.getElementById("metodo").value = 'PIX';
         document.getElementById("pix").value = '';
         document.getElementById("banco").value = '';
@@ -728,7 +741,17 @@ window.mudarAba = function(aba) {
     if (aba === 'creditos') renderCreditos();
 }
 
+window.atualizarPreviewCredito = function() {
+    const previewEl = document.getElementById("creditoPreview");
+    if (!previewEl || document.activeElement === previewEl) return;
+    const valorNum = parseFloat(document.getElementById("valor").value);
+    const c = isNaN(valorNum) ? null : calcularCreditos(valorNum);
+    previewEl.value = c != null ? c : '';
+}
+
 function renderCreditos() {
+    const sideEl = document.getElementById("saldoSidebar");
+    if (sideEl) sideEl.textContent = creditosConfig.saldoAtual;
     const saldoEl = document.getElementById("creditoSaldo");
     if (!saldoEl) return;
     if (document.activeElement !== saldoEl) saldoEl.value = creditosConfig.saldoAtual;

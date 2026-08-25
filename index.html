@@ -322,10 +322,6 @@
                         <input type="number" step="0.01" id="valor" placeholder="0,00" oninput="window.atualizarPreviewCredito()">
                     </div>
                     <div class="form-group">
-                        <label>Créditos</label>
-                        <input type="number" step="1" id="creditoPreview" placeholder="0">
-                    </div>
-                    <div class="form-group">
                         <label>Método</label>
                         <select id="metodo">
                             <option value="PIX">PIX</option>
@@ -350,6 +346,10 @@
                     <div class="form-group">
                         <label>Status</label>
                         <input type="text" value="PAGO" disabled style="color:var(--green);font-weight:700;border-color:#1a3a2a;background:#0a1a10;">
+                    </div>
+                    <div class="form-group">
+                        <label>Créditos</label>
+                        <input type="number" step="1" id="creditoPreview" placeholder="0" onclick="window.marcarCreditoManual()" onfocus="window.marcarCreditoManual()">
                     </div>
                     <div class="form-group" style="display:flex;flex-direction:column;gap:8px;">
                         <button class="btn-green" onclick="window.adicionar()">+ ADICIONAR</button>
@@ -680,11 +680,13 @@ window.removerLinha = async function(id) {
         try {
             const item = dados.find(d => d.id === id);
             await deleteDoc(doc(db, "lancamentos", id));
-            if (item && item.creditos != null) {
-                creditosConfig.saldoAtual += item.creditos;
-                await salvarCreditosConfig();
-            }
             mostrarStatus("Removido!", "ok");
+            if (item && item.creditos != null) {
+                try {
+                    creditosConfig.saldoAtual += item.creditos;
+                    await salvarCreditosConfig();
+                } catch(e2) { mostrarStatus("⚠ Removido, mas falhou ao estornar créditos!", "erro"); }
+            }
         } catch(e) { mostrarStatus("Erro ao remover!", "erro"); }
     }
 }
@@ -706,19 +708,22 @@ window.adicionar = async function() {
     btn.textContent = "SALVANDO..."; btn.disabled = true;
     try {
         await addDoc(colecao, { dataCompleta, data: `${pad(agora.getDate())}/${pad(agora.getMonth()+1)}/${agora.getFullYear()}`, cliente, valor: valorNum, metodo, pix, banco, status: "PAGO", creditos: creditosGastos, timestamp: serverTimestamp() });
-        if (creditosGastos != null) {
-            creditosConfig.saldoAtual -= creditosGastos;
-            await salvarCreditosConfig();
-        }
         document.getElementById("cliente").value = '';
         document.getElementById("valor").value = '';
         document.getElementById("creditoPreview").value = '';
         document.getElementById("metodo").value = 'PIX';
         document.getElementById("pix").value = '';
         document.getElementById("banco").value = '';
+        creditoManualmenteEditado = false;
         mostrarStatus(creditosGastos != null ? `✓ Salvo! −${creditosGastos} créditos` : "✓ Salvo! (fora das faixas — ajuste na aba Créditos)", "ok");
-    } catch(e) { mostrarStatus("Erro ao salvar!", "erro"); }
+    } catch(e) { mostrarStatus("Erro ao salvar!", "erro"); btn.textContent = "+ ADICIONAR"; btn.disabled = false; return; }
     btn.textContent = "+ ADICIONAR"; btn.disabled = false;
+    if (creditosGastos != null) {
+        try {
+            creditosConfig.saldoAtual -= creditosGastos;
+            await salvarCreditosConfig();
+        } catch(e) { mostrarStatus("⚠ Cliente salvo, mas falhou ao descontar créditos!", "erro"); }
+    }
 }
 
 function calcularTotalHoje() {
@@ -752,9 +757,16 @@ window.mudarAba = function(aba) {
     if (aba === 'creditos') renderCreditos();
 }
 
+let creditoManualmenteEditado = false;
+
+window.marcarCreditoManual = function() {
+    creditoManualmenteEditado = true;
+}
+
 window.atualizarPreviewCredito = function() {
+    if (creditoManualmenteEditado) return;
     const previewEl = document.getElementById("creditoPreview");
-    if (!previewEl || document.activeElement === previewEl) return;
+    if (!previewEl) return;
     const valorNum = parseFloat(document.getElementById("valor").value);
     const c = isNaN(valorNum) ? null : calcularCreditos(valorNum);
     previewEl.value = c != null ? c : '';
@@ -809,33 +821,39 @@ window.editandoSaldo = false;
 
 window.salvarSaldoManual = async function() {
     const v = document.getElementById("creditoSaldo").value;
+    const anterior = creditosConfig.saldoAtual;
     creditosConfig.saldoAtual = parseFloat(v) || 0;
     window.editandoSaldo = false;
-    await salvarCreditosConfig();
-    mostrarStatus("✓ Saldo atualizado!", "ok");
+    try {
+        await salvarCreditosConfig();
+        mostrarStatus("✓ Saldo atualizado!", "ok");
+    } catch(e) { creditosConfig.saldoAtual = anterior; mostrarStatus("❌ Falha ao salvar saldo!", "erro"); renderCreditos(); }
 }
 
 window.resetarCreditos = async function() {
     if (!confirm("Resetar saldo para 200 créditos?")) return;
+    const anterior = creditosConfig.saldoAtual;
     creditosConfig.saldoAtual = 200;
-    await salvarCreditosConfig();
-    mostrarStatus("✓ Saldo resetado para 200!", "ok");
+    try {
+        await salvarCreditosConfig();
+        mostrarStatus("✓ Saldo resetado para 200!", "ok");
+    } catch(e) { creditosConfig.saldoAtual = anterior; mostrarStatus("❌ Falha ao resetar saldo!", "erro"); renderCreditos(); }
 }
 
 window.adicionarFaixa = async function() {
     creditosConfig.faixas.push({ min: 0, max: 0, creditos: 0 });
-    await salvarCreditosConfig();
+    try { await salvarCreditosConfig(); } catch(e) { mostrarStatus("❌ Falha ao salvar faixa!", "erro"); }
     renderFaixas();
 }
 
 window.editarFaixa = async function(i, campo, v) {
     creditosConfig.faixas[i][campo] = parseFloat(v) || 0;
-    await salvarCreditosConfig();
+    try { await salvarCreditosConfig(); } catch(e) { mostrarStatus("❌ Falha ao salvar faixa!", "erro"); }
 }
 
 window.removerFaixa = async function(i) {
     creditosConfig.faixas.splice(i, 1);
-    await salvarCreditosConfig();
+    try { await salvarCreditosConfig(); } catch(e) { mostrarStatus("❌ Falha ao remover faixa!", "erro"); }
     renderFaixas();
 }
 
@@ -846,9 +864,11 @@ window.definirCreditoManual = async function(id, v) {
     const antigo = item.creditos != null ? item.creditos : 0;
     const novoNum = novo != null ? novo : 0;
     creditosConfig.saldoAtual -= (novoNum - antigo);
-    await salvarCreditosConfig();
-    await updateDoc(doc(db, "lancamentos", id), { creditos: novo });
-    mostrarStatus("✓ Créditos ajustados!", "ok");
+    try {
+        await salvarCreditosConfig();
+        await updateDoc(doc(db, "lancamentos", id), { creditos: novo });
+        mostrarStatus("✓ Créditos ajustados!", "ok");
+    } catch(e) { mostrarStatus("❌ Falha ao ajustar créditos!", "erro"); }
 }
 
 window.baixarCSV = function() {
